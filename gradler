@@ -1,0 +1,168 @@
+#!/bin/bash
+
+SOURCE=${BASH_SOURCE[0]}
+while [ -h "$SOURCE" ]; do
+    DIR=$( cd -P $( dirname "$SOURCE") && pwd )
+    SOURCE=$(readlink "$SOURCE")
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+DIR=$( cd -P $( dirname "$SOURCE" ) && pwd )
+echo $DIR
+
+echo "checking gradler version..."
+curl -o "$DIR/remote_version" -s https://raw.githubusercontent.com/CactusCode/gradler/master/local_version
+versionsDiffer="$(diff -q $DIR/local_version $DIR/remote_version)"
+if [ -z "$versionsDiffer" ]
+then
+    echo "gradler is up to date
+    "
+else
+    echo "gradler may not be up to date. Use \"git pull\" to get latest gradler."
+    diff "$DIR/local_version" "$DIR/remote_version"
+    echo ""
+fi
+rm "$DIR/remote_version"
+
+#Example default parameters
+#export GRADLER_FLAVOR="flavorName"
+#export GRADLER_BUILDTYPE="debug"
+
+while getopts "catiusf:dro:" opt
+do
+    case "$opt" in 
+        c ) clean="clean" ;;
+        a ) assemble="assemble" ;;
+        t ) test="test" ;;
+        u ) uninstall="uninstall" ;;
+        i ) install="install" ;;
+        f ) flavorParam="$OPTARG" ;;
+        d ) buildParam="debug" ;;
+        r ) buildParam="release" ;;
+        o ) buildParam="$OPTARG" ;;
+    esac
+done
+
+flavorParam="${flavorParam:-$GRADLER_FLAVOR}"
+buildParam="${buildParam:-$GRADLER_BUILDTYPE}"
+
+if [ -z "$flavorParam" ]
+then
+    shouldQuit="yes"
+    echo "flavor is missing.
+    -f with an argument. Example: -f flavorName
+
+    You can also export a default value to avoid having to retype the flavor. In other words...
+
+    For this command:
+    gradler -f flavorName -d -a -t -i
+
+    If you set the GRADLER_FLAVOR as such:
+    export GRADLER_FLAVOR=\"flavorName\"
+
+    Then you can call gradler like this:
+    gradler -d -a -t -i
+    "
+fi
+
+if [ -z "$buildParam" ]
+then
+    shouldQuit="yes"
+    echo "build type is missing.
+    -d for debug
+    -r for release
+    -o with an argument. Example: -o buildType
+
+    You can also export a default value to avoid having to retype the build type. In other words...
+
+    For this command:
+    gradler -f flavorName -d -a -t -i
+
+    If you set the GRADLER_BUILDTYPE as such:
+    export GRADLER_BUILDTYPE=\"debug\"
+
+    Then you can call gradler like this:
+    gradler -f flavorName -a -t -i
+    "
+fi
+
+if [ -z "$clean" ] && [ -z "$assemble" ] && [ -z "$test" ] && [ -z "$install" ] && [ -z "$uninstall" ]
+then
+    shouldQuit="yes"
+    echo "action is missing. 
+    -c for clean
+    -a for assemble 
+    -t for testing
+    -u for uninstall
+    -i for install
+
+    you can query multiple actions, but they will always be executed in the c -> a -> t -> u -> i order
+    "
+fi
+
+if [ -n "$shouldQuit" ]
+then
+    exit 1
+fi
+
+flavor="$(tr '[:lower:]' '[:upper:]' <<< ${flavorParam:0:1})${flavorParam:1}"
+build="$(tr '[:lower:]' '[:upper:]' <<< ${buildParam:0:1})${buildParam:1}"
+
+if [ -n "$assemble" ]
+then
+    one="assemble${flavor}${build}"
+fi
+
+if [ -n "$test" ]
+then
+    operation="test${flavor}${build}UnitTest"
+    if [ -z "$one" ]; then
+        one="${operation}"
+    else
+        two="${operation}"
+    fi
+fi
+
+if [ -n "$uninstall" ]
+then
+    operation="uninstall${flavor}${build}"
+    if [ -z "$one" ]; then
+        one="${operation}"
+    elif [ -z "$two" ]; then
+        two="${operation}"
+    else
+        three="${operation}"
+    fi
+fi
+
+if [ -n "$install" ]
+then
+    operation="install${flavor}${build}"
+    if [ -z "$one" ]; then
+        one="${operation}"
+    elif [ -z "$two" ]; then
+        two="${operation}"
+    elif [ -z "$three" ]; then
+        three="${operation}"
+    else
+        four="${operation}"
+    fi
+fi
+
+if [ -n "$clean" ]
+then
+    ./gradlew clean
+fi
+
+if [ -n "$one" ] && [ -n "$two" ] && [ -n "$three" ] && [ -n "$four" ]; then
+    echo "will execute ${one} ${two} ${three} ${four}"
+    ./gradlew "${one}" "${two}" "${three}" "${four}"
+elif [ -n "$one" ] && [ -n "$two" ] && [ -n "$three" ]; then
+    echo "will execute ${one} ${two} ${three}"
+    ./gradlew "${one}" "${two}" "${three}"
+elif [ -n "$one" ] && [ -n "$two" ]; then
+    echo "will execute ${one} ${two}"
+    ./gradlew "${one}" "${two}"
+elif [ -n "$one" ]; then
+    echo "will execute ${one}"
+    ./gradlew "${one}"
+fi
