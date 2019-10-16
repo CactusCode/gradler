@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Find the folder containing this script
 SOURCE=${BASH_SOURCE[0]}
 while [ -h "$SOURCE" ]; do
     DIR=$( cd -P $( dirname "$SOURCE") && pwd )
@@ -7,8 +8,21 @@ while [ -h "$SOURCE" ]; do
     [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 DIR=$( cd -P $( dirname "$SOURCE" ) && pwd )
-echo $DIR
 
+# Read config values
+CONFIG="$DIR/config"
+if [ -f "$CONFIG" ]; then
+    source "$DIR/config"
+else
+    echo "#!/bin/bash
+GRADLER_FLAVOR=
+GRADLER_BUILDTYPE=
+GRADLER_APK_FOLDER=
+GRADLER_SYSTEM_FOLDER=
+GRADLER_SYSTEM_APK_NAME=" >> "$DIR/config"
+fi
+
+# Check for updates
 echo "checking gradler version..."
 curl -o "$DIR/remote_version" -s https://raw.githubusercontent.com/CactusCode/gradler/master/local_version
 versionsDiffer="$(diff -q $DIR/local_version $DIR/remote_version)"
@@ -17,28 +31,26 @@ then
     echo "gradler is up to date
     "
 else
-    echo "gradler may not be up to date. Use \"git pull\" to get latest gradler."
+    echo "gradler may not be up to date. Go to $DIR and use \"git pull\" to get latest gradler."
     diff "$DIR/local_version" "$DIR/remote_version"
     echo ""
 fi
 rm "$DIR/remote_version"
 
-#Example default parameters
-#export GRADLER_FLAVOR="flavorName"
-#export GRADLER_BUILDTYPE="debug"
-
+# Start the script
 while getopts "catiusf:dro:" opt
 do
     case "$opt" in 
+        f ) flavorParam="$OPTARG" ;;
+        d ) buildParam="debug" ;;
+        r ) buildParam="release" ;;
+        o ) buildParam="$OPTARG" ;;
         c ) clean="clean" ;;
         a ) assemble="assemble" ;;
         t ) test="test" ;;
         u ) uninstall="uninstall" ;;
         i ) install="install" ;;
-        f ) flavorParam="$OPTARG" ;;
-        d ) buildParam="debug" ;;
-        r ) buildParam="release" ;;
-        o ) buildParam="$OPTARG" ;;
+        s ) system="system" ;;
     esac
 done
 
@@ -51,15 +63,14 @@ then
     echo "flavor is missing.
     -f with an argument. Example: -f flavorName
 
-    You can also export a default value to avoid having to retype the flavor. In other words...
+    You can also use a default value by setting the GRADLER_FLAVOR property in the config file at $DIR/config
 
-    For this command:
+    For example, having GRADLER_FLAVOR=flavorName would let you go from
+
     gradler -f flavorName -d -a -t -i
 
-    If you set the GRADLER_FLAVOR as such:
-    export GRADLER_FLAVOR=\"flavorName\"
-
-    Then you can call gradler like this:
+    to
+    
     gradler -d -a -t -i
     "
 fi
@@ -72,20 +83,19 @@ then
     -r for release
     -o with an argument. Example: -o buildType
 
-    You can also export a default value to avoid having to retype the build type. In other words...
+    You can also use a default value by setting the GRADLER_BUILDTYPE property in the config file at $DIR/config
 
-    For this command:
+    For example, having GRADLER_BUILDTYPE=debug would let you go from
+
     gradler -f flavorName -d -a -t -i
 
-    If you set the GRADLER_BUILDTYPE as such:
-    export GRADLER_BUILDTYPE=\"debug\"
-
-    Then you can call gradler like this:
+    to
+    
     gradler -f flavorName -a -t -i
     "
 fi
 
-if [ -z "$clean" ] && [ -z "$assemble" ] && [ -z "$test" ] && [ -z "$install" ] && [ -z "$uninstall" ]
+if [ -z "$clean" ] && [ -z "$assemble" ] && [ -z "$test" ] && [ -z "$install" ] && [ -z "$uninstall" ] && [ -z "$system" ]
 then
     shouldQuit="yes"
     echo "action is missing. 
@@ -95,7 +105,13 @@ then
     -u for uninstall
     -i for install
 
-    you can query multiple actions, but they will always be executed in the c -> a -> t -> u -> i order
+    You can query multiple actions, but they will always be executed in the c -> a -> t -> u -> i order
+
+    You can also use the -s option for a system install. This option overrides every other options given. It will...
+    1. uninstall the app from the device
+    2. remove the app from the system folder
+    3. clean, assemble and test the app (-c -a -t options)
+    4. push the resulting apk to the device
     "
 fi
 
@@ -106,6 +122,25 @@ fi
 
 flavor="$(tr '[:lower:]' '[:upper:]' <<< ${flavorParam:0:1})${flavorParam:1}"
 build="$(tr '[:lower:]' '[:upper:]' <<< ${buildParam:0:1})${buildParam:1}"
+
+if [ -n "$system" ] && [ -n "$GRADLER_APK_FOLDER" ] && [ -n "$GRADLER_SYSTEM_FOLDER" ] && [ -n "$GRADLER_SYSTEM_APK_NAME" ]
+then
+    ./gradlew clean "uninstall${flavor}${build}"
+    adb wait-for-device && adb root && adb remount && adb shell rm -rf "${GRADLER_SYSTEM_FOLDER}" && adb reboot
+    ./gradlew "assemble${flavor}${build}" "test${flavor}${build}UnitTest"
+    apk=$(ls -t ${GRADLER_APK_FOLDER}/${flavorParam}/${buildParam}/ | grep apk | head -n1)
+    adb wait-for-device && adb root && adb remount && adb push "${GRADLER_APK_FOLDER}/${flavorParam}/${buildParam}/${apk}" "${GRADLER_SYSTEM_FOLDER}/${GRADLER_SYSTEM_APK_NAME}.apk" && adb reboot
+    exit 1
+elif [ -n "$system" ]
+then
+    echo "Config values are not properly set for a system install. Here is the current config:
+    
+    GRADLER_APK_FOLDER=$GRADLER_APK_FOLDER
+    GRADLER_SYSTEM_FOLDER=$GRADLER_SYSTEM_FOLDER
+    GRADLER_SYSTEM_APK_NAME=$GRADLER_SYSTEM_APK_NAME
+    
+    The config file should be located at $DIR/config"
+fi
 
 if [ -n "$assemble" ]
 then
