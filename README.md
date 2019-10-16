@@ -8,6 +8,6 @@ Make [gradle](https://gradle.org/) usage easier.
 ## Planned improvements
 * ~Add default variables~
 * ~Add gradler update notification system~
-* Add system install option
+* ~Add system install option~
 * Improve update system to wait some time before rechecking version
 * Make sure a single "cmd + c" kills the whole script
