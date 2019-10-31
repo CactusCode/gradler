@@ -126,7 +126,7 @@ build="$(tr '[:lower:]' '[:upper:]' <<< ${buildParam:0:1})${buildParam:1}"
 if [ -n "$system" ] && [ -n "$GRADLER_APK_FOLDER" ] && [ -n "$GRADLER_SYSTEM_FOLDER" ] && [ -n "$GRADLER_SYSTEM_APK_NAME" ]
 then
     ./gradlew clean "uninstall${flavor}${build}"
-    adb wait-for-device && adb root && adb remount && adb shell rm -rf "${GRADLER_SYSTEM_FOLDER}" && adb reboot
+    adb wait-for-device && adb root && adb remount && adb shell rm -rf "${GRADLER_SYSTEM_FOLDER}/${GRADLER_SYSTEM_APK_NAME}.apk" && adb reboot
     ./gradlew "assemble${flavor}${build}" "test${flavor}${build}UnitTest"
     apk=$(ls -t ${GRADLER_APK_FOLDER}/${flavorParam}/${buildParam}/ | grep apk | head -n1)
     adb wait-for-device && adb root && adb remount && adb push "${GRADLER_APK_FOLDER}/${flavorParam}/${buildParam}/${apk}" "${GRADLER_SYSTEM_FOLDER}/${GRADLER_SYSTEM_APK_NAME}.apk" && adb reboot
